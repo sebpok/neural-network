@@ -1,12 +1,17 @@
 import numpy as np
 import pandas as pd
 
-data = pd.read_csv('./datasets/mnist_train.csv')
+data = pd.read_csv('./datasets/mnist_train.csv', nrows=15000)
 data = np.array(data)
 np.random.shuffle(data)  # Shuffle the dataset
-X, y = data[:, 1:], data[:, 0]
+
+data_train = data[:10000]  # Use all 60,000 samples for training
+data_test = data[10001:15000]  # Use 10,000 samples for testing
+
+X, y = data_train[:, 1:], data_train[:, 0]
 X = X / 255.0  # Normalize
 
+X_test, y_test = data_test[:, 1:], data_test[:, 0]
 np.random.seed(0)
 
 class Layer_Dense:
@@ -126,16 +131,16 @@ def iterate_minibatches(X, y, batch_size):
         yield X[excerpt], y[excerpt]
 
 def main():
-    dense1 = Layer_Dense(784, 128)
+    dense1 = Layer_Dense(784, 32)
     activation1 = Activation_ReLU()
-    dense2 = Layer_Dense(128, 64)
+    dense2 = Layer_Dense(32, 32)
     activation2 = Activation_ReLU()
-    dense3 = Layer_Dense(64, 10)
+    dense3 = Layer_Dense(32, 10)
     loss_activation = Activation_Softmax_Loss_CategoricalCrossentropy()
-    optimizer = Optimizer_SGD(learning_rate=0.1)
+    optimizer = Optimizer_SGD(learning_rate=0.05)
 
-    epochs = 10
-    batch_size = 4 
+    epochs = 50
+    batch_size = 64 
     for epoch in range(epochs):
         for X_batch, y_batch in iterate_minibatches(X, y, batch_size):
             dense1.forward(X_batch)
@@ -157,13 +162,15 @@ def main():
             optimizer.update_params(dense2)
             optimizer.update_params(dense3)
         print(f"epoch {epoch+1}: loss={np.mean(loss):.4f} acc={accuracy:.4f}")
+    print("\nBenchmark na całym zbiorze treningowym:")
+    predict_batch(X_test, y_test, dense1, activation1, dense2, activation2, dense3, loss_activation)
     predict_custom_image("sample.jpg", dense1, activation1, dense2, activation2, dense3, loss_activation)
     while True:
         index = int(input("Enter an index to test prediction (0-59999, or -1 to exit): "))
         if index == -1:
             break
         if 0 <= index < len(X):
-            test_prediction(index, X, y, dense1, activation1, dense2, activation2, dense3, loss_activation)
+            test_prediction(index, X_test, y_test, dense1, activation1, dense2, activation2, dense3, loss_activation)
         else:
             print("Index out of range. Please try again.")
 
