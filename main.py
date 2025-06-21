@@ -103,6 +103,7 @@ def test_prediction(index, X, y, dense1, activation1, dense2, activation2, dense
     prediction, probs = predict(current_image_reshaped, dense1, activation1, dense2, activation2, dense3, loss_activation)
     print("Prediction:", prediction[0])
     print("Label:    ", y[index])
+    print("Probabilities:", probs[0])
 
     plt.gray()
     plt.imshow(current_image.reshape(28, 28), interpolation='nearest')
