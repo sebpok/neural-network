@@ -1,12 +1,12 @@
 import numpy as np
 import pandas as pd
 
-data = pd.read_csv('./datasets/mnist_train.csv', nrows=15000)
+data = pd.read_csv('./datasets/mnist_train.csv', nrows=39000)
 data = np.array(data)
 np.random.shuffle(data)  # Shuffle the dataset
 
-data_train = data[:10000]  # Use all 60,000 samples for training
-data_test = data[10001:15000]  # Use 10,000 samples for testing
+data_train = data[:20000]  # Use all 60,000 samples for training
+data_test = data[20001:29000]  # Use 10,000 samples for testing
 
 X, y = data_train[:, 1:], data_train[:, 0]
 X = X / 255.0  # Normalize
@@ -88,6 +88,7 @@ class Optimizer_SGD:
     def update_params(self, layer):
         layer.weights += -self.learning_rate * layer.dweights
         layer.biases += -self.learning_rate * layer.dbiases
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -131,15 +132,15 @@ def iterate_minibatches(X, y, batch_size):
         yield X[excerpt], y[excerpt]
 
 def main():
-    dense1 = Layer_Dense(784, 32)
+    dense1 = Layer_Dense(784, 128)
     activation1 = Activation_ReLU()
-    dense2 = Layer_Dense(32, 32)
+    dense2 = Layer_Dense(128, 128)
     activation2 = Activation_ReLU()
-    dense3 = Layer_Dense(32, 10)
+    dense3 = Layer_Dense(128, 10)
     loss_activation = Activation_Softmax_Loss_CategoricalCrossentropy()
-    optimizer = Optimizer_SGD(learning_rate=0.05)
+    optimizer = Optimizer_SGD(learning_rate=0.1)
 
-    epochs = 50
+    epochs = 75 
     batch_size = 64 
     for epoch in range(epochs):
         for X_batch, y_batch in iterate_minibatches(X, y, batch_size):
