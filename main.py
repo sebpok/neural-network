@@ -3,6 +3,7 @@ import pandas as pd
 
 data = pd.read_csv('./datasets/mnist_train.csv')
 data = np.array(data)
+np.random.shuffle(data)  # Shuffle the dataset
 X, y = data[:, 1:], data[:, 0]
 X = X / 255.0  # Normalize
 
@@ -131,10 +132,10 @@ def main():
     activation2 = Activation_ReLU()
     dense3 = Layer_Dense(64, 10)
     loss_activation = Activation_Softmax_Loss_CategoricalCrossentropy()
-    optimizer = Optimizer_SGD(learning_rate=0.01)
+    optimizer = Optimizer_SGD(learning_rate=0.1)
 
-    epochs = 20
-    batch_size = 64
+    epochs = 10
+    batch_size = 4 
     for epoch in range(epochs):
         for X_batch, y_batch in iterate_minibatches(X, y, batch_size):
             dense1.forward(X_batch)
@@ -156,6 +157,7 @@ def main():
             optimizer.update_params(dense2)
             optimizer.update_params(dense3)
         print(f"epoch {epoch+1}: loss={np.mean(loss):.4f} acc={accuracy:.4f}")
+    predict_custom_image("sample.jpg", dense1, activation1, dense2, activation2, dense3, loss_activation)
     while True:
         index = int(input("Enter an index to test prediction (0-59999, or -1 to exit): "))
         if index == -1:
@@ -164,5 +166,29 @@ def main():
             test_prediction(index, X, y, dense1, activation1, dense2, activation2, dense3, loss_activation)
         else:
             print("Index out of range. Please try again.")
+
+from PIL import Image
+def predict_custom_image(image_path, dense1, activation1, dense2, activation2, dense3, loss_activation):
+    # Wczytaj obrazek i skonwertuj do odcieni szarości
+    img = Image.open(image_path).convert('L')
+    # Zamień na numpy array
+    img_array = np.array(img)
+    # (Opcjonalnie odwróć kolory jeśli cyfra jest biała na czarnym tle)
+    # img_array = 255 - img_array
+    # Spłaszcz do 1D i normalizuj
+    input_vector = img_array.flatten() / 255.0
+    # Dodaj wymiar batcha
+    input_vector = input_vector.reshape(1, -1)
+    # Przewiduj
+    prediction, probs = predict(input_vector, dense1, activation1, dense2, activation2, dense3, loss_activation)
+    print("Predykcja:", prediction[0])
+    print("Prawdopodobieństwa:", probs[0])
+    # Pokaż obrazek
+    import matplotlib.pyplot as plt
+    plt.gray()
+    plt.imshow(img_array, interpolation='nearest')
+    plt.title(f"Predykcja: {prediction[0]}")
+    plt.show()
+
 if __name__ == "__main__":
     main()
