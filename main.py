@@ -1,22 +1,24 @@
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+import tkinter as tk
+from PIL import Image
+from show_grid import DrawGrid
 
-data = pd.read_csv('./datasets/mnist_train.csv', nrows=39000)
-data = np.array(data)
-np.random.shuffle(data)  # Shuffle the dataset
+# ----------- LAYERS -----------
+class Layer:
+    def forward(self, inputs):
+        raise NotImplementedError
+    def backward(self, dvalues):
+        raise NotImplementedError
+    def get_params(self):
+        return []
+    def set_params(self, params):
+        pass
 
-data_train = data[:20000]  # Use all 60,000 samples for training
-data_test = data[20001:29000]  # Use 10,000 samples for testing
-
-X, y = data_train[:, 1:], data_train[:, 0]
-X = X / 255.0  # Normalize
-
-X_test, y_test = data_test[:, 1:], data_test[:, 0]
-np.random.seed(0)
-
-class Layer_Dense:
+class Layer_Dense(Layer):
     def __init__(self, n_inputs, n_neurons):
-        self.weights = np.random.randn(n_inputs, n_neurons) * np.sqrt(2. / n_inputs)  # He init
+        self.weights = np.random.randn(n_inputs, n_neurons) * np.sqrt(2. / n_inputs)
         self.biases = np.zeros((1, n_neurons))
     def forward(self, inputs):
         self.inputs = inputs
@@ -25,25 +27,28 @@ class Layer_Dense:
         self.dweights = np.dot(self.inputs.T, dvalues)
         self.dbiases = np.sum(dvalues, axis=0, keepdims=True)
         self.dinputs = np.dot(dvalues, self.weights.T)
+    def get_params(self):
+        return [self.weights, self.biases]
+    def set_params(self, params):
+        self.weights, self.biases = params
 
-class Activation_ReLU:
+class Activation_ReLU(Layer):
     def forward(self, inputs):
         self.inputs = inputs
         self.output = np.maximum(0, inputs)
     def backward(self, dvalues):
-        self.dinputs = dvalues.copy()
-        self.dinputs[self.inputs <= 0] = 0
+        self.dinputs = dvalues * (self.inputs > 0)
 
-class Activation_Softmax:
+class Activation_Softmax(Layer):
     def forward(self, inputs):
         self.inputs = inputs
         exp_values = np.exp(inputs - np.max(inputs, axis=1, keepdims=True))
-        probabilities = exp_values / np.sum(exp_values, axis=1, keepdims=True)
-        self.output = probabilities
+        self.output = exp_values / np.sum(exp_values, axis=1, keepdims=True)
     def backward(self, dvalues):
-        # Not used directly, handled with combined softmax+crossentropy
+        # Usually used together with cross-entropy for efficiency
         pass
 
+# ----------- LOSS -----------
 class Loss:
     def calculate(self, output, y):
         sample_losses = self.forward(output, y)
@@ -68,12 +73,14 @@ class Loss_CategoricalCrossentropy(Loss):
         self.dinputs = -y_true / dvalues
         self.dinputs = self.dinputs / samples
 
-class Activation_Softmax_Loss_CategoricalCrossentropy:
-    def forward(self, inputs, y_true):
+class Activation_Softmax_Loss_CategoricalCrossentropy(Layer):
+    def __init__(self):
         self.activation = Activation_Softmax()
+        self.loss = Loss_CategoricalCrossentropy()
+    def forward(self, inputs, y_true):
         self.activation.forward(inputs)
         self.output = self.activation.output
-        return Loss_CategoricalCrossentropy().forward(self.output, y_true)
+        return self.loss.forward(self.output, y_true)
     def backward(self, dvalues, y_true):
         samples = len(dvalues)
         if len(y_true.shape) == 2:
@@ -82,121 +89,135 @@ class Activation_Softmax_Loss_CategoricalCrossentropy:
         self.dinputs[range(samples), y_true] -= 1
         self.dinputs = self.dinputs / samples
 
+# ----------- OPTIMIZER -----------
 class Optimizer_SGD:
     def __init__(self, learning_rate=1.0):
         self.learning_rate = learning_rate
     def update_params(self, layer):
-        layer.weights += -self.learning_rate * layer.dweights
-        layer.biases += -self.learning_rate * layer.dbiases
+        if hasattr(layer, 'weights'):
+            layer.weights += -self.learning_rate * layer.dweights
+            layer.biases += -self.learning_rate * layer.dbiases
 
-import matplotlib.pyplot as plt
-import numpy as np
+# ----------- NETWORK -----------
+class NeuralNetwork:
+    def __init__(self):
+        self.layers = []
+        self.loss = None
+        self.optimizer = None
 
-def predict(X, dense1, activation1, dense2, activation2, dense3, loss_activation):
-    # Forward pass through the network
-    dense1.forward(X)
-    activation1.forward(dense1.output)
-    dense2.forward(activation1.output)
-    activation2.forward(dense2.output)
-    dense3.forward(activation2.output)
-    loss_activation.activation.forward(dense3.output)
-    probs = loss_activation.activation.output
-    predictions = np.argmax(probs, axis=1)
-    return predictions, probs
+    def add(self, layer):
+        self.layers.append(layer)
 
-def test_prediction(index, X, y, dense1, activation1, dense2, activation2, dense3, loss_activation):
-    current_image = X[index]
-    current_image_reshaped = current_image.reshape(1, -1)  # shape (1, 784)
-    prediction, probs = predict(current_image_reshaped, dense1, activation1, dense2, activation2, dense3, loss_activation)
-    print("Prediction:", prediction[0])
-    print("Label:    ", y[index])
-    print("Probabilities:", probs[0])
+    def set(self, *, loss, optimizer):
+        self.loss = loss
+        self.optimizer = optimizer
 
+    def forward(self, X, training=True):
+        output = X
+        for layer in self.layers:
+            if isinstance(layer, Activation_Softmax_Loss_CategoricalCrossentropy):
+                break  # handled separately
+            layer.forward(output)
+            output = layer.output
+        return output
+
+    def predict(self, X):
+        output = X
+        probs = 0
+        for layer in self.layers:
+            if isinstance(layer, Activation_Softmax_Loss_CategoricalCrossentropy):
+                layer.activation.forward(output)
+                probs = layer.activation.output
+                break
+            layer.forward(output)
+            output = layer.output
+        print("----- PREDICTION ------")
+        print(f"It's: {np.argmax(probs, axis=1)} | Probes: {probs}")
+        return np.argmax(probs, axis=1), probs
+
+    def train(self, X, y, epochs=10, batch_size=32, verbose=1):
+        for epoch in range(epochs):
+            indices = np.arange(X.shape[0])
+            np.random.shuffle(indices)
+            X_shuffled, y_shuffled = X[indices], y[indices]
+            for start in range(0, X.shape[0], batch_size):
+                end = start + batch_size
+                X_batch, y_batch = X_shuffled[start:end], y_shuffled[start:end]
+
+                # Forward pass
+                output = X_batch
+                for layer in self.layers:
+                    if isinstance(layer, Activation_Softmax_Loss_CategoricalCrossentropy):
+                        loss = layer.forward(output, y_batch)
+                        break
+                    layer.forward(output)
+                    output = layer.output
+
+                # Metrics
+                predictions = np.argmax(layer.output, axis=1)
+                accuracy = np.mean(predictions == y_batch)
+
+                # Backward pass
+                layer.backward(layer.output, y_batch)
+                for l in reversed(self.layers[:-1]):
+                    l.backward(self.layers[self.layers.index(l)+1].dinputs)
+
+                # Update
+                for l in self.layers:
+                    if hasattr(l, 'weights'):
+                        self.optimizer.update_params(l)
+            if verbose:
+                print(f"Epoch {epoch+1}: loss={np.mean(loss):.4f} acc={accuracy:.4f}")
+
+    def evaluate(self, X, y):
+        predictions, _ = self.predict(X)
+        accuracy = np.mean(predictions == y)
+        print(f"Accuracy: {accuracy:.4f}")
+        return accuracy
+
+# ----------- DATA LOADING UTILS -----------
+def load_data():
+    data = pd.read_csv('./datasets/mnist_train.csv', nrows=39000)
+    data = np.array(data)
+    np.random.shuffle(data)
+    data_train = data[:20000]
+    data_test = data[20001:29000]
+    X_train, y_train = data_train[:, 1:] / 255.0, data_train[:, 0]
+    X_test, y_test = data_test[:, 1:] / 255.0, data_test[:, 0]
+    return X_train, y_train.astype(int), X_test, y_test.astype(int)
+
+# ------------- DATASET VISUALIZATION -----------
+def show_image(image):
     plt.gray()
-    plt.imshow(current_image.reshape(28, 28), interpolation='nearest')
-    plt.title(f"Prediction: {prediction[0]}, Label: {y[index]}")
+    plt.imshow(image.reshape(28, 28), interpolation='nearest')
+    plt.title(f"Prediction: {prediction[0]}, Label: {y_test[index]}")
     plt.show()
 
-def predict_batch(X, y, dense1, activation1, dense2, activation2, dense3, loss_activation):
-    predictions, _ = predict(X, dense1, activation1, dense2, activation2, dense3, loss_activation)
-    accuracy = np.mean(predictions == y)
-    print(f"Batch accuracy: {accuracy:.4f}")
-    return accuracy
-
-def iterate_minibatches(X, y, batch_size):
-    indices = np.arange(X.shape[0])
-    np.random.shuffle(indices)
-    for start in range(0, X.shape[0], batch_size):
-        end = start + batch_size
-        excerpt = indices[start:end]
-        yield X[excerpt], y[excerpt]
-
-def main():
-    dense1 = Layer_Dense(784, 128)
-    activation1 = Activation_ReLU()
-    dense2 = Layer_Dense(128, 128)
-    activation2 = Activation_ReLU()
-    dense3 = Layer_Dense(128, 10)
-    loss_activation = Activation_Softmax_Loss_CategoricalCrossentropy()
-    optimizer = Optimizer_SGD(learning_rate=0.1)
-
-    epochs = 75 
-    batch_size = 64 
-    for epoch in range(epochs):
-        for X_batch, y_batch in iterate_minibatches(X, y, batch_size):
-            dense1.forward(X_batch)
-            activation1.forward(dense1.output)
-            dense2.forward(activation1.output)
-            activation2.forward(dense2.output)
-            dense3.forward(activation2.output)
-            loss = loss_activation.forward(dense3.output, y_batch)
-            predictions = np.argmax(loss_activation.output, axis=1)
-            accuracy = np.mean(predictions == y_batch)
-
-            loss_activation.backward(loss_activation.output, y_batch)
-            dense3.backward(loss_activation.dinputs)
-            activation2.backward(dense3.dinputs)
-            dense2.backward(activation2.dinputs)
-            activation1.backward(dense2.dinputs)
-            dense1.backward(activation1.dinputs)
-            optimizer.update_params(dense1)
-            optimizer.update_params(dense2)
-            optimizer.update_params(dense3)
-        print(f"epoch {epoch+1}: loss={np.mean(loss):.4f} acc={accuracy:.4f}")
-    print("\nBenchmark na całym zbiorze treningowym:")
-    predict_batch(X_test, y_test, dense1, activation1, dense2, activation2, dense3, loss_activation)
-    predict_custom_image("sample.jpg", dense1, activation1, dense2, activation2, dense3, loss_activation)
-    while True:
-        index = int(input("Enter an index to test prediction (0-59999, or -1 to exit): "))
-        if index == -1:
-            break
-        if 0 <= index < len(X):
-            test_prediction(index, X_test, y_test, dense1, activation1, dense2, activation2, dense3, loss_activation)
-        else:
-            print("Index out of range. Please try again.")
-
-from PIL import Image
-def predict_custom_image(image_path, dense1, activation1, dense2, activation2, dense3, loss_activation):
-    # Wczytaj obrazek i skonwertuj do odcieni szarości
-    img = Image.open(image_path).convert('L')
-    # Zamień na numpy array
-    img_array = np.array(img)
-    # (Opcjonalnie odwróć kolory jeśli cyfra jest biała na czarnym tle)
-    # img_array = 255 - img_array
-    # Spłaszcz do 1D i normalizuj
-    input_vector = img_array.flatten() / 255.0
-    # Dodaj wymiar batcha
-    input_vector = input_vector.reshape(1, -1)
-    # Przewiduj
-    prediction, probs = predict(input_vector, dense1, activation1, dense2, activation2, dense3, loss_activation)
-    print("Predykcja:", prediction[0])
-    print("Prawdopodobieństwa:", probs[0])
-    # Pokaż obrazek
-    import matplotlib.pyplot as plt
-    plt.gray()
-    plt.imshow(img_array, interpolation='nearest')
-    plt.title(f"Predykcja: {prediction[0]}")
-    plt.show()
-
+def reshape_image_for_prediction(image):
+    image = image.reshape(1, -1)  # Reshape to (1, 784)
+    return image / 255.0  # Normalize
+# ----------- USAGE -----------
 if __name__ == "__main__":
-    main()
+    X_train, y_train, X_test, y_test = load_data()
+    np.random.seed(0)
+
+    net = NeuralNetwork()
+    net.add(Layer_Dense(784, 128))
+    net.add(Activation_ReLU())
+    net.add(Layer_Dense(128, 64))
+    net.add(Activation_ReLU())
+    net.add(Layer_Dense(64, 10))
+    net.add(Activation_Softmax_Loss_CategoricalCrossentropy())
+    net.set(
+        loss=Loss_CategoricalCrossentropy(),
+        optimizer=Optimizer_SGD(learning_rate=0.1)
+    )
+    net.train(X_train, y_train, epochs=100, batch_size=64)
+    root = tk.Tk()
+    root.title("Rysowanie Paint 28x28 (ciągłe rozjaśnianie, z printem macierzy)")
+    grid = DrawGrid(root)
+    clear_btn = tk.Button(root, text="Wyczyść", command=grid.clear)
+    clear_btn.pack()
+    show_data_btn = tk.Button(root, text="Przewiduj", command=lambda: net.predict(reshape_image_for_prediction(grid.data)))
+    show_data_btn.pack()
+    root.mainloop()
