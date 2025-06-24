@@ -2,7 +2,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import tkinter as tk
-from PIL import Image
+import pickle
+import scipy.ndimage
 from show_grid import DrawGrid
 
 # ----------- LAYERS -----------
@@ -98,6 +99,31 @@ class Optimizer_SGD:
             layer.weights += -self.learning_rate * layer.dweights
             layer.biases += -self.learning_rate * layer.dbiases
 
+
+# ----------- DATA AUGMENTATION UTILS -----------
+def augment_image(img_flat):
+    img = img_flat.reshape(28, 28)
+    # Random shift
+    shift = np.random.randint(-3, 4, 2)
+    img = scipy.ndimage.shift(img, shift, mode='nearest')
+    # Random rotation
+    angle = np.random.uniform(-15, 15)
+    img = scipy.ndimage.rotate(img, angle, reshape=False, mode='nearest')
+    # Add gaussian noise
+    img += np.random.normal(0, 0.05, img.shape)
+    # Clip values to [0, 1]
+    img = np.clip(img, 0, 1)
+    return img.flatten()
+
+# Optionally, preprocess user-drawn digits before prediction
+def preprocess_user_image(img_flat):
+    img = img_flat.reshape(28, 28)
+    cy, cx = scipy.ndimage.center_of_mass(img)
+    shiftx = np.round(img.shape[1] / 2.0 - cx).astype(int)
+    shifty = np.round(img.shape[0] / 2.0 - cy).astype(int)
+    img = scipy.ndimage.shift(img, (shifty, shiftx), mode='nearest')
+    return img.flatten()
+
 # ----------- NETWORK -----------
 class NeuralNetwork:
     def __init__(self):
@@ -111,6 +137,20 @@ class NeuralNetwork:
     def set(self, *, loss, optimizer):
         self.loss = loss
         self.optimizer = optimizer
+
+    def save(self, filename):
+        params = [layer.get_params() for layer in self.layers]
+        with open(filename, 'wb') as f:
+            pickle.dump(params, f)
+        print(f"Model saved to {filename}")
+
+    def load(self, filename):
+        with open(filename, 'rb') as f:
+            params = pickle.load(f)
+        for layer, layer_params in zip(self.layers, params):
+            layer.set_params(layer_params)
+        print(f"Model loaded from {filename}")
+
 
     def forward(self, X, training=True):
         output = X
@@ -143,6 +183,9 @@ class NeuralNetwork:
             for start in range(0, X.shape[0], batch_size):
                 end = start + batch_size
                 X_batch, y_batch = X_shuffled[start:end], y_shuffled[start:end]
+                
+                # AUGMENTATION: augment each image in the batch
+                # X_batch_aug = np.array([augment_image(x) for x in X_batch])
 
                 # Forward pass
                 output = X_batch
@@ -176,48 +219,79 @@ class NeuralNetwork:
         return accuracy
 
 # ----------- DATA LOADING UTILS -----------
-def load_data():
-    data = pd.read_csv('./datasets/mnist_train.csv', nrows=39000)
-    data = np.array(data)
-    np.random.shuffle(data)
-    data_train = data[:20000]
-    data_test = data[20001:29000]
-    X_train, y_train = data_train[:, 1:] / 255.0, data_train[:, 0]
-    X_test, y_test = data_test[:, 1:] / 255.0, data_test[:, 0]
-    return X_train, y_train.astype(int), X_test, y_test.astype(int)
+def load_data(mode, rows):
+    if mode == 'test':
+        data = pd.read_csv('./datasets/mnist_test.csv', nrows=rows)
+        data = np.array(data)
+        np.random.shuffle(data)
+        data_test = data[:rows]
+        X_train, y_train = 0, 0
+        X_test, y_test = data_test[:, 1:] / 255.0, data_test[:, 0]
+        return X_train, y_train, X_test, y_test.astype(int)
+
+    elif mode == 'train':
+        data = pd.read_csv('./datasets/mnist_train.csv', nrows=rows)
+        data = np.array(data)
+        np.random.shuffle(data)
+        data_train = data[:rows]
+        data_test = data[rows:rows+1000]
+        X_train, y_train = data_train[:, 1:] / 255.0, data_train[:, 0]
+        X_test, y_test = data_test[:, 1:] / 255.0, data_test[:, 0]
+        return X_train, y_train.astype(int), X_test, y_test.astype(int)
+
+    else:
+        raise ValueError("Mode must be 'train' or 'test'")
 
 # ------------- DATASET VISUALIZATION -----------
-def show_image(image):
+def show_image(image, prediction):
     plt.gray()
     plt.imshow(image.reshape(28, 28), interpolation='nearest')
-    plt.title(f"Prediction: {prediction[0]}, Label: {y_test[index]}")
+    plt.title(f"Prediction: {prediction[0]}")
     plt.show()
 
 def reshape_image_for_prediction(image):
     image = image.reshape(1, -1)  # Reshape to (1, 784)
     return image / 255.0  # Normalize
-# ----------- USAGE -----------
-if __name__ == "__main__":
-    X_train, y_train, X_test, y_test = load_data()
-    np.random.seed(0)
+
+def main():
+    X_train, y_train, X_test, y_test = load_data('test', 50)
 
     net = NeuralNetwork()
-    net.add(Layer_Dense(784, 128))
+    net.add(Layer_Dense(784, 254))
     net.add(Activation_ReLU())
-    net.add(Layer_Dense(128, 64))
+    net.add(Layer_Dense(254, 128))
     net.add(Activation_ReLU())
-    net.add(Layer_Dense(64, 10))
+    net.add(Layer_Dense(128, 10))
     net.add(Activation_Softmax_Loss_CategoricalCrossentropy())
     net.set(
         loss=Loss_CategoricalCrossentropy(),
-        optimizer=Optimizer_SGD(learning_rate=0.1)
+        optimizer=Optimizer_SGD(learning_rate=0.05)
     )
-    net.train(X_train, y_train, epochs=100, batch_size=64)
-    root = tk.Tk()
-    root.title("Rysowanie Paint 28x28 (ciągłe rozjaśnianie, z printem macierzy)")
-    grid = DrawGrid(root)
-    clear_btn = tk.Button(root, text="Wyczyść", command=grid.clear)
-    clear_btn.pack()
-    show_data_btn = tk.Button(root, text="Przewiduj", command=lambda: net.predict(reshape_image_for_prediction(grid.data)))
-    show_data_btn.pack()
-    root.mainloop()
+    #net.train(X_train, y_train, epochs=200, batch_size=64)
+    net.load("model_new.plk")
+    net.evaluate(X_test, y_test)
+    user_input = input("Enter '1' to show a random image, '2' to predict a drawn digit, or 'q' to quit: ")
+    
+    if user_input == '1':
+        while True: 
+            index = np.random.randint(0, len(X_test))
+            image = X_test[index]
+            prediction, _ = net.predict(image)
+            show_image(image, prediction)
+            if(input("Press Enter to show another image or 'q' to quit: ") == 'q'):
+                break
+
+    elif user_input == '2':
+        root = tk.Tk()
+        root.title("Rysowanie Paint 28x28 (ciągłe rozjaśnianie, z printem macierzy)")
+        grid = DrawGrid(root)
+        clear_btn = tk.Button(root, text="Wyczyść", command=grid.clear)
+        clear_btn.pack()
+        show_data_btn = tk.Button(root, text="Przewiduj", command=lambda: net.predict(preprocess_user_image(grid.data)))
+        show_data_btn.pack()
+        root.mainloop()
+
+
+# ----------- USAGE -----------
+if __name__ == "__main__":
+    main()

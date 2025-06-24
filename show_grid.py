@@ -3,8 +3,9 @@ import numpy as np
 
 PIXEL_SIZE = 15
 GRID_SIZE = 28
-PEN_SIZE = 2
-PEN_INC = 48
+PEN_WIDTH = 2  # 3 pixels wide
+PEN_HEIGHT = 2  # 3 pixels high
+PEN_INC = 254 / 6
 
 class DrawGrid(tk.Canvas):
     def __init__(self, master):
@@ -38,17 +39,30 @@ class DrawGrid(tk.Canvas):
 
     def _paint(self):
         changed = False
-        for dx in range(-(PEN_SIZE // 2), PEN_SIZE // 2 + 1):
-            for dy in range(-(PEN_SIZE // 2), PEN_SIZE // 2 + 1):
-                nx, ny = self.cur_x + dx, self.cur_y + dy
-                if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
-                    prev = self.data[ny, nx]
-                    if prev < 240:
-                        new_val = min(240, prev + PEN_INC)
-                        if new_val != prev:
-                            self.data[ny, nx] = new_val
-                            self.draw_pixel(nx, ny)
-                            changed = True
+        # Draw a cross: horizontal and vertical lines intersecting at (cur_x, cur_y)
+        half_w = PEN_WIDTH // 2
+        half_h = PEN_HEIGHT // 2
+        for dx in range(-half_w, half_w + 1):
+            nx, ny = self.cur_x + dx, self.cur_y
+            if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
+                prev = self.data[ny, nx]
+                if prev < 254:
+                    new_val = min(254, prev + PEN_INC)
+                    if new_val != prev:
+                        self.data[ny, nx] = new_val
+                        self.draw_pixel(nx, ny)
+                        changed = True
+        for dy in range(-half_h, half_h + 1):
+            nx, ny = self.cur_x, self.cur_y + dy
+            if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
+                prev = self.data[ny, nx]
+                if prev < 254:
+                    new_val = min(254, prev + PEN_INC)
+                    if new_val != prev:
+                        self.data[ny, nx] = new_val
+                        self.draw_pixel(nx, ny)
+                        changed = True
+
     def _start_timer(self):
         if self.drawing:
             self._paint()
