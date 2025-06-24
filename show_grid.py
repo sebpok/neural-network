@@ -5,7 +5,7 @@ PIXEL_SIZE = 15
 GRID_SIZE = 28
 PEN_WIDTH = 2  # 3 pixels wide
 PEN_HEIGHT = 2  # 3 pixels high
-PEN_INC = 254 / 6
+PEN_INC = 254 / 4
 
 class DrawGrid(tk.Canvas):
     def __init__(self, master):

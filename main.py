@@ -243,10 +243,10 @@ def load_data(mode, rows):
         raise ValueError("Mode must be 'train' or 'test'")
 
 # ------------- DATASET VISUALIZATION -----------
-def show_image(image, prediction):
+def show_image(image, prediction, label):
     plt.gray()
     plt.imshow(image.reshape(28, 28), interpolation='nearest')
-    plt.title(f"Prediction: {prediction[0]}")
+    plt.title(f"Prediction: {prediction[0]}, label: {label}")
     plt.show()
 
 def reshape_image_for_prediction(image):
@@ -254,42 +254,53 @@ def reshape_image_for_prediction(image):
     return image / 255.0  # Normalize
 
 def main():
-    X_train, y_train, X_test, y_test = load_data('test', 50)
+    mode = 'test' # 'test' or 'train'
+    rows = 2000
+
+    X_train, y_train, X_test, y_test = load_data(mode, rows)
 
     net = NeuralNetwork()
     net.add(Layer_Dense(784, 254))
     net.add(Activation_ReLU())
-    net.add(Layer_Dense(254, 128))
+    net.add(Layer_Dense(254, 254))
     net.add(Activation_ReLU())
-    net.add(Layer_Dense(128, 10))
+    net.add(Layer_Dense(254, 10))
     net.add(Activation_Softmax_Loss_CategoricalCrossentropy())
     net.set(
         loss=Loss_CategoricalCrossentropy(),
-        optimizer=Optimizer_SGD(learning_rate=0.05)
+        optimizer=Optimizer_SGD(learning_rate=0.5)
     )
-    #net.train(X_train, y_train, epochs=200, batch_size=64)
-    net.load("model_new.plk")
-    net.evaluate(X_test, y_test)
-    user_input = input("Enter '1' to show a random image, '2' to predict a drawn digit, or 'q' to quit: ")
-    
-    if user_input == '1':
-        while True: 
-            index = np.random.randint(0, len(X_test))
-            image = X_test[index]
-            prediction, _ = net.predict(image)
-            show_image(image, prediction)
-            if(input("Press Enter to show another image or 'q' to quit: ") == 'q'):
-                break
 
-    elif user_input == '2':
-        root = tk.Tk()
-        root.title("Rysowanie Paint 28x28 (ciągłe rozjaśnianie, z printem macierzy)")
-        grid = DrawGrid(root)
-        clear_btn = tk.Button(root, text="Wyczyść", command=grid.clear)
-        clear_btn.pack()
-        show_data_btn = tk.Button(root, text="Przewiduj", command=lambda: net.predict(preprocess_user_image(grid.data)))
-        show_data_btn.pack()
-        root.mainloop()
+    if mode == 'train':
+        net.train(X_train, y_train, epochs=50, batch_size=128)
+        net.evaluate(X_train, y_train)
+        file_name = input("Enter filename to save the model: ")
+        net.save(file_name)
+
+    elif mode == 'test':
+        net.load("new_model.plk")
+        net.evaluate(X_test, y_test)
+        user_input = input("Enter '1' to show a random image, '2' to predict a drawn digit, or 'q' to quit: ")
+
+        if user_input == '1':
+            while True: 
+                index = np.random.randint(0, len(X_test))
+                image = X_test[index]
+                label = y_test[index]
+                prediction, _ = net.predict(image)
+                show_image(image, prediction, label)
+                if(input("Press Enter to show another image or 'q' to quit: ") == 'q'):
+                    break
+
+        elif user_input == '2':
+            root = tk.Tk()
+            root.title("Rysowanie Paint 28x28 (ciągłe rozjaśnianie, z printem macierzy)")
+            grid = DrawGrid(root)
+            clear_btn = tk.Button(root, text="Wyczyść", command=grid.clear)
+            clear_btn.pack()
+            show_data_btn = tk.Button(root, text="Przewiduj", command=lambda: net.predict(preprocess_user_image(grid.data)))
+            show_data_btn.pack()
+            root.mainloop()
 
 
 # ----------- USAGE -----------
